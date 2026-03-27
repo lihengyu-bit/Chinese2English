@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import List
+from typing import Any, List, Sequence, Tuple
 
 import streamlit as st
 
@@ -14,15 +14,16 @@ from ppt_translator import (
 
 st.set_page_config(
     page_title="PPT 中英翻译与自动排版",
-    page_icon="📄",
+    page_icon="📊",
     layout="centered",
 )
 
 RUNTIME_ENV = get_runtime_environment()
-GEMINI_MODELS = [
-    "gemini-2.5-flash",
-    "gemini-2.5-pro",
-    "gemini-2.0-flash",
+MODEL_OPTIONS: Sequence[Tuple[str, str]] = [
+    ("Gemini 3 Pro (Preview)", "gemini-3-pro-preview"),
+    ("Gemini 3 Flash (Preview)", "gemini-3-flash-preview"),
+    ("Gemini 2.5 Flash", "gemini-2.5-flash"),
+    ("Gemini 2.5 Pro", "gemini-2.5-pro"),
 ]
 
 
@@ -85,7 +86,7 @@ PAGE_CSS = """
 """
 
 
-def reset_output_if_file_changed(uploaded_file: st.runtime.uploaded_file_manager.UploadedFile) -> None:
+def reset_output_if_file_changed(uploaded_file: Any) -> None:
     token = None
     if uploaded_file is not None:
         token = "{0}:{1}".format(uploaded_file.name, uploaded_file.size)
@@ -104,6 +105,25 @@ def build_download_name(source_name: str) -> str:
     return "{0}_EN.pptx".format(stem)
 
 
+def resolve_model_name() -> str:
+    selected = st.selectbox(
+        "Gemini 模型",
+        options=list(MODEL_OPTIONS),
+        index=0,
+        format_func=lambda item: "{0}  ({1})".format(item[0], item[1]),
+        help="默认提供 Gemini 3 和 Gemini 2.5 的常用模型代码。",
+    )
+    custom_model = st.text_input(
+        "自定义模型名（可选）",
+        placeholder="例如：gemini-3-pro-preview",
+        help=(
+            "如果你在 AI Studio 或官方文档里拿到新的模型代码，可以直接填在这里。"
+            "留空时，使用上方选中的模型。"
+        ),
+    )
+    return (custom_model or "").strip() or selected[1]
+
+
 def render_page() -> None:
     st.markdown(PAGE_CSS, unsafe_allow_html=True)
     st.markdown(
@@ -111,21 +131,22 @@ def render_page() -> None:
         <div class="hero-card">
             <div class="hero-title">PPT 中英翻译与自动排版</div>
             <div class="hero-subtitle">
-                上传中文 PPT，调用你自己的 Gemini API Key 完成逐页翻译，并尽量保留原始样式、图片、
-                图表、背景与页面结构。处理完成后，网页会直接返回新的 .pptx 文件。
+                上传中文 PPT，调用你自己的 Gemini API Key 进行逐页翻译，
+                尽量保留原始样式、图片、图表、背景和页面结构。
+                处理完成后，网页会直接返回新的 .pptx 文件供下载。
             </div>
             <div class="tip-row">
                 <div class="tip-card">
                     <strong>1. 填入 API Key</strong>
-                    Key 只在当前会话中使用，不写入文件。
+                    仅在当前会话中使用，不写入文件。
                 </div>
                 <div class="tip-card">
                     <strong>2. 上传 .pptx</strong>
-                    支持点击选择或拖拽到上传区。
+                    支持点击选择或拖拽上传。
                 </div>
                 <div class="tip-card">
                     <strong>3. 开始翻译</strong>
-                    页面会显示逐页进度，完成后可直接下载。
+                    页面会显示进度，完成后可直接下载。
                 </div>
             </div>
         </div>
@@ -137,31 +158,25 @@ def render_page() -> None:
         "Gemini API Key",
         type="password",
         placeholder="AIza...",
-        help="网页不会把 API Key 写入磁盘；刷新页面后需要重新输入。",
+        help="网页不会把 API Key 写入磁盘，刷新页面后需要重新输入。",
     )
-
-    model = st.selectbox(
-        "Gemini 模型",
-        options=GEMINI_MODELS,
-        index=0,
-        help="默认使用 gemini-2.5-flash，兼顾速度与成本；如果 `pro` 遇到 429，优先切回 `flash`。",
-    )
+    model = resolve_model_name()
 
     uploaded_file = st.file_uploader(
         "上传 PPTX 文件",
         type=["pptx"],
-        help="支持拖拽上传，仅处理 .pptx 文件。",
+        help="仅处理 .pptx 文件，支持拖拽上传。",
     )
     reset_output_if_file_changed(uploaded_file)
 
     if RUNTIME_ENV["ready"]:
-        st.info("当前运行引擎: {0}".format(RUNTIME_ENV["message"]))
+        st.info("当前运行引擎：{0}".format(RUNTIME_ENV["message"]))
     else:
         st.error(RUNTIME_ENV["message"])
 
     if uploaded_file is not None:
         st.caption(
-            "已选择文件: {0} ({1:.2f} MB)".format(
+            "已选择文件：{0} ({1:.2f} MB)".format(
                 uploaded_file.name,
                 uploaded_file.size / 1024.0 / 1024.0,
             )
@@ -188,7 +203,7 @@ def render_page() -> None:
                 "正在处理第 {0} 页，共 {1} 页\n\n{2}".format(current, total, detail)
             )
             progress_bar.progress(percent)
-            logs.append("第 {0}/{1} 页: {2}".format(current, total, detail))
+            logs.append("第 {0}/{1} 页：{2}".format(current, total, detail))
             log_placeholder.code("\n".join(logs[-12:]), language="text")
 
         try:
@@ -213,7 +228,7 @@ def render_page() -> None:
             st.session_state["last_error"] = str(exc)
             progress_placeholder.empty()
             status_placeholder.error(
-                "处理过程中出现未预期错误: {0}".format(exc)
+                "处理过程中出现未预期错误：{0}".format(exc)
             )
 
     if st.session_state.get("translated_bytes"):
@@ -228,12 +243,11 @@ def render_page() -> None:
     with st.expander("处理说明", expanded=False):
         st.markdown(
             """
-            - 只会读取和替换形状与表格中的文本，不会主动压缩、重绘或替换图片、图表、背景。
+            - 只会读取和替换形状与表格中的文本，不会主动替换图片、图表、背景或页面结构。
             - 组合图形会递归遍历内部文本。
             - 纯数字或不含中文的内容会自动跳过，减少不必要的 Token 消耗。
-            - 译文较长时会启用自动换行，并对文本框高度、表格行高和下方重叠元素做保守式微调。
-            - 当前机器如果没有 `python-pptx`，会自动改走本机 PowerPoint 引擎。
-            - 如果 Gemini 返回 429，通常是当前模型限流或额度不足，优先换成 `gemini-2.5-flash` 再试。
+            - 译文较长时会尽量通过换行、缩字和保守排版微调来减少溢出。
+            - 如果 Gemini 返回 429，通常是当前模型限流或额度不足，可优先切换到更轻量的模型。
             """
         )
 
