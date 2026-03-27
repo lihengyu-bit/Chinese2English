@@ -1,6 +1,10 @@
-[theme]
+﻿[theme]
 base = "light"
 primaryColor = "#1b6b4b"
 backgroundColor = "#f5faf7"
 secondaryBackgroundColor = "#ffffff"
 textColor = "#163226"
+
+[server]
+maxUploadSize = 300
+maxMessageSize = 300
