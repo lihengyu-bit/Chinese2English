@@ -1,0 +1,6 @@
+services:
+  - type: web
+    name: ppt-translator
+    runtime: docker
+    autoDeploy: true
+    healthCheckPath: /
